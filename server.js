@@ -126,6 +126,15 @@ socket.on('chat-message', (data) => {
   console.log('💬 Chat message in room:', currentRoom);
   socket.to(currentRoom).emit('chat-message', data);
 });
+  socket.on('typing-start', () => {
+  if (!currentRoom) return;
+  socket.to(currentRoom).emit('typing-start');
+});
+
+socket.on('typing-stop', () => {
+  if (!currentRoom) return;
+  socket.to(currentRoom).emit('typing-stop');
+});
   // ========== WebRTC Video Call Signaling ==========
   
   // User initiates a call
