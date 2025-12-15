@@ -151,6 +151,33 @@ socket.on('screen-share-toggle', (data) => {
   console.log('🖥️ Screen share toggle from:', socket.id, data);
   socket.to(currentRoom).emit('screen-share-toggle', data);
 });
+// File events
+socket.on('file-create', (file) => {
+  socket.to(currentRoom).emit('file-create', file);
+});
+socket.on('file-update', (data) => {
+  socket.to(currentRoom).emit('file-update', data);
+});
+socket.on('file-rename', (data) => {
+  socket.to(currentRoom).emit('file-rename', data);
+});
+socket.on('file-delete', (fileId) => {
+  socket.to(currentRoom).emit('file-delete', fileId);
+});
+
+// Note events
+socket.on('note-create', (note) => {
+  socket.to(currentRoom).emit('note-create', note);
+});
+socket.on('note-update', (data) => {
+  socket.to(currentRoom).emit('note-update', data);
+});
+socket.on('note-rename', (data) => {
+  socket.to(currentRoom).emit('note-rename', data);
+});
+socket.on('note-delete', (noteId) => {
+  socket.to(currentRoom).emit('note-delete', noteId);
+});
 
   // ========== WebRTC Video Call Signaling ==========
   
