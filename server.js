@@ -135,6 +135,23 @@ socket.on('typing-stop', () => {
   if (!currentRoom) return;
   socket.to(currentRoom).emit('typing-stop');
 });
+
+  socket.on('video-toggle', (data) => {
+  if (!currentRoom) return;
+  socket.to(currentRoom).emit('video-toggle', data);
+});
+// Audio toggle
+socket.on('audio-toggle', (data) => {
+  console.log('🎤 Audio toggle from:', socket.id, data);
+  socket.to(currentRoom).emit('audio-toggle', data);
+});
+
+// Screen share toggle
+socket.on('screen-share-toggle', (data) => {
+  console.log('🖥️ Screen share toggle from:', socket.id, data);
+  socket.to(currentRoom).emit('screen-share-toggle', data);
+});
+
   // ========== WebRTC Video Call Signaling ==========
   
   // User initiates a call
