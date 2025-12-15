@@ -1,4 +1,4 @@
-// server.js - Main Express + Socket.IO Server
+// server.js
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -31,7 +31,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/codeshare
   .then(() => console.log('✅ Connected to MongoDB'))
   .catch(err => console.error('❌ MongoDB connection error:', err));
 
-// Room Schema with arrays for files & notes + TTL
+// Room Schema
 const roomSchema = new mongoose.Schema({
   roomId: { type: String, required: true, unique: true, index: true },
   files: [{
@@ -45,12 +45,10 @@ const roomSchema = new mongoose.Schema({
     name: { type: String, required: true },
     content: { type: String, default: '' }
   }],
-  createdAt: { type: Date, default: Date.now, expires: 86400 } // Auto-delete after 24h
+  createdAt: { type: Date, default: Date.now, expires: 86400 } // 24-hour TTL
 });
 
 const Room = mongoose.model('Room', roomSchema);
-
-// Track users per room (max 2)
 const roomUsers = new Map(); // roomId -> Set<socket.id>
 
 io.on('connection', (socket) => {
@@ -58,9 +56,9 @@ io.on('connection', (socket) => {
   let currentRoom = null;
 
   socket.on('join-room', async (roomId) => {
+    // Room full check
     if (roomUsers.has(roomId) && roomUsers.get(roomId).size >= 2) {
       socket.emit('room-full');
-      console.log('🚫 Room full:', roomId);
       return;
     }
 
@@ -72,6 +70,7 @@ io.on('connection', (socket) => {
 
     socket.emit('user-id', socket.id);
 
+    // Load or create room
     let room = await Room.findOne({ roomId });
     if (!room) {
       room = await Room.create({
@@ -90,53 +89,47 @@ io.on('connection', (socket) => {
       });
     }
 
-    // Send full room state
+    // Send fresh data from DB
     socket.emit('sync', {
       files: room.files,
       notes: room.notes
     });
 
+    // Update user count
     const userList = Array.from(roomUsers.get(roomId));
     io.to(roomId).emit('users-update', userList);
-    console.log(`👥 Users in room ${roomId}: ${userList.length}`);
   });
 
-  // Chat
-  socket.on('chat-message', (data) => {
+  // Helper: broadcast latest room state to all in room
+  const broadcastLatestState = async () => {
     if (!currentRoom) return;
-    socket.to(currentRoom).emit('chat-message', data);
-  });
+    const room = await Room.findOne({ roomId: currentRoom });
+    if (room) {
+      io.to(currentRoom).emit('sync', {
+        files: room.files,
+        notes: room.notes
+      });
+    }
+  };
 
-  // Typing indicators (optional)
-  socket.on('typing-start', () => { if (currentRoom) socket.to(currentRoom).emit('typing-start'); });
-  socket.on('typing-stop', () => { if (currentRoom) socket.to(currentRoom).emit('typing-stop'); });
-
-  // Media toggles
-  socket.on('video-toggle', (data) => { if (currentRoom) socket.to(currentRoom).emit('video-toggle', data); });
-  socket.on('audio-toggle', (data) => { if (currentRoom) socket.to(currentRoom).emit('audio-toggle', data); });
-  socket.on('screen-share-toggle', (data) => { if (currentRoom) socket.to(currentRoom).emit('screen-share-toggle', data); });
-
-  // === File Events ===
+  // File Events
   socket.on('file-create', async (file) => {
     if (!currentRoom) return;
-    await Room.updateOne(
-      { roomId: currentRoom },
-      { $push: { files: file } }
-    );
-    socket.to(currentRoom).emit('file-create', file);
+    await Room.updateOne({ roomId: currentRoom }, { $push: { files: file } });
+    await broadcastLatestState();
   });
 
   socket.on('file-update', async (data) => {
     if (!currentRoom) return;
-    const update = {};
-    if (data.content !== undefined) update['files.$.content'] = data.content;
-    if (data.language !== undefined) update['files.$.language'] = data.language;
+    const setFields = {};
+    if (data.content !== undefined) setFields['files.$.content'] = data.content;
+    if (data.language !== undefined) setFields['files.$.language'] = data.language;
 
     await Room.updateOne(
       { roomId: currentRoom, 'files.id': data.fileId },
-      { $set: update }
+      { $set: setFields }
     );
-    socket.to(currentRoom).emit('file-update', data);
+    await broadcastLatestState();
   });
 
   socket.on('file-rename', async (data) => {
@@ -145,7 +138,7 @@ io.on('connection', (socket) => {
       { roomId: currentRoom, 'files.id': data.fileId },
       { $set: { 'files.$.name': data.name } }
     );
-    socket.to(currentRoom).emit('file-rename', data);
+    await broadcastLatestState();
   });
 
   socket.on('file-delete', async (fileId) => {
@@ -154,17 +147,14 @@ io.on('connection', (socket) => {
       { roomId: currentRoom },
       { $pull: { files: { id: fileId } } }
     );
-    socket.to(currentRoom).emit('file-delete', fileId);
+    await broadcastLatestState();
   });
 
-  // === Note Events ===
+  // Note Events
   socket.on('note-create', async (note) => {
     if (!currentRoom) return;
-    await Room.updateOne(
-      { roomId: currentRoom },
-      { $push: { notes: note } }
-    );
-    socket.to(currentRoom).emit('note-create', note);
+    await Room.updateOne({ roomId: currentRoom }, { $push: { notes: note } });
+    await broadcastLatestState();
   });
 
   socket.on('note-update', async (data) => {
@@ -173,7 +163,7 @@ io.on('connection', (socket) => {
       { roomId: currentRoom, 'notes.id': data.noteId },
       { $set: { 'notes.$.content': data.content } }
     );
-    socket.to(currentRoom).emit('note-update', data);
+    await broadcastLatestState();
   });
 
   socket.on('note-rename', async (data) => {
@@ -182,7 +172,7 @@ io.on('connection', (socket) => {
       { roomId: currentRoom, 'notes.id': data.noteId },
       { $set: { 'notes.$.name': data.name } }
     );
-    socket.to(currentRoom).emit('note-rename', data);
+    await broadcastLatestState();
   });
 
   socket.on('note-delete', async (noteId) => {
@@ -191,10 +181,15 @@ io.on('connection', (socket) => {
       { roomId: currentRoom },
       { $pull: { notes: { id: noteId } } }
     );
-    socket.to(currentRoom).emit('note-delete', noteId);
+    await broadcastLatestState();
   });
 
-  // === WebRTC Signaling ===
+  // Chat & other events
+  socket.on('chat-message', (data) => {
+    if (currentRoom) socket.to(currentRoom).emit('chat-message', data);
+  });
+
+  // WebRTC signaling (unchanged)
   socket.on('call-request', () => { if (currentRoom) socket.to(currentRoom).emit('call-request', socket.id); });
   socket.on('call-accepted', () => { if (currentRoom) socket.to(currentRoom).emit('call-accepted'); });
   socket.on('call-rejected', () => { if (currentRoom) socket.to(currentRoom).emit('call-rejected'); });
@@ -203,7 +198,11 @@ io.on('connection', (socket) => {
   socket.on('answer', (answer) => { if (currentRoom) socket.to(currentRoom).emit('answer', answer); });
   socket.on('ice-candidate', (candidate) => { if (currentRoom) socket.to(currentRoom).emit('ice-candidate', candidate); });
 
-  // Disconnect
+  // Media toggles
+  socket.on('video-toggle', (data) => { if (currentRoom) socket.to(currentRoom).emit('video-toggle', data); });
+  socket.on('audio-toggle', (data) => { if (currentRoom) socket.to(currentRoom).emit('audio-toggle', data); });
+  socket.on('screen-share-toggle', (data) => { if (currentRoom) socket.to(currentRoom).emit('screen-share-toggle', data); });
+
   socket.on('disconnect', () => {
     console.log('🔌 User disconnected:', socket.id);
     if (currentRoom && roomUsers.has(currentRoom)) {
@@ -218,31 +217,24 @@ io.on('connection', (socket) => {
   });
 });
 
-// Cleanup old rooms every hour
+// Cleanup old rooms
 cron.schedule('0 * * * *', async () => {
-  console.log('🧹 Running cleanup job...');
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const result = await Room.deleteMany({ createdAt: { $lt: cutoff } });
-  console.log(`🗑️ Deleted ${result.deletedCount} old rooms`);
+  console.log(`🗑️ Deleted ${result.deletedCount} expired rooms`);
 });
 
-// Health & room info endpoints
+// API endpoints
 app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    rooms: roomUsers.size,
-    connections: io.engine.clientsCount
-  });
+  res.json({ status: 'ok', rooms: roomUsers.size, connections: io.engine.clientsCount });
 });
 
 app.get('/api/room/:roomId', async (req, res) => {
   try {
     const room = await Room.findOne({ roomId: req.params.roomId });
     if (!room) return res.status(404).json({ error: 'Room not found' });
-    const userCount = roomUsers.get(req.params.roomId)?.size || 0;
-    res.json({ ...room.toObject(), userCount, maxUsers: 2 });
-  } catch (error) {
+    res.json({ ...room.toObject(), userCount: roomUsers.get(req.params.roomId)?.size || 0 });
+  } catch (err) {
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -250,5 +242,4 @@ app.get('/api/room/:roomId', async (req, res) => {
 const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 WebSocket ready for connections`);
 });
