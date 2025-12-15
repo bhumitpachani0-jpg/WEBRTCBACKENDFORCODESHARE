@@ -11,13 +11,19 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: process.env.FRONTEND_URL || '*',
+    origin:'https://www.codeshare.online',
     methods: ['GET', 'POST']
   }
 });
 
+const corsOptions = {
+  origin: "https://www.codeshare.online",
+  methods: ["GET", "POST"],
+  credentials: true
+};
 // Middleware
-app.use(cors());
+app.use(cors(corsOptions));
+app.options("*", cors(corsOptions));
 app.use(express.json());
 
 // MongoDB Connection
