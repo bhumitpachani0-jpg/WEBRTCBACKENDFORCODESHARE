@@ -121,7 +121,11 @@ io.on('connection', (socket) => {
     
     socket.to(currentRoom).emit('language-update', data);
   });
-
+socket.on('chat-message', (data) => {
+  if (!currentRoom) return;
+  console.log('💬 Chat message in room:', currentRoom);
+  socket.to(currentRoom).emit('chat-message', data);
+});
   // ========== WebRTC Video Call Signaling ==========
   
   // User initiates a call
