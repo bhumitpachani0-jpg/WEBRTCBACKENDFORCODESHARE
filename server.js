@@ -55,12 +55,12 @@ const roomSchema = new mongoose.Schema({
   activeNoteId: String,
   createdAt: { 
     type: Date, 
-    default: Date.now, 
-    expires: 86400 // TTL: 24 hours (auto-delete)
+    default: Date.now
   },
   lastActivity: {
     type: Date,
-    default: Date.now
+    default: Date.now,
+    expires: 86400 // TTL: 24 hours from last activity (auto-delete)
   }
 });
 
@@ -427,7 +427,7 @@ io.on('connection', (socket) => {
 cron.schedule('0 * * * *', async () => {
   console.log('🧹 Running cleanup job...');
   const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  const result = await Room.deleteMany({ createdAt: { $lt: cutoff } });
+  const result = await Room.deleteMany({ lastActivity: { $lt: cutoff } });
   console.log(`🗑️ Deleted ${result.deletedCount} old rooms`);
 });
 
