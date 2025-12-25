@@ -51,6 +51,7 @@ const roomSchema = new mongoose.Schema({
     name: String,
     content: String
   }],
+  browserUrl: String,
   activeFileId: String,
   activeNoteId: String,
   createdAt: { 
@@ -147,6 +148,41 @@ io.on('connection', (socket) => {
       socket.emit('error', { message: 'Failed to join room' });
     }
   });
+
+  // Add to socket.on handlers section
+
+// ========== BROWSER SYNC ==========
+socket.on('browser-request-sync', async ({ roomId }) => {
+  try {
+    const room = await Room.findOne({ roomId });
+    if (room && room.browserUrl) {
+      socket.emit('browser-sync', { url: room.browserUrl });
+    }
+  } catch (error) {
+    console.error('❌ Error syncing browser:', error);
+  }
+});
+
+socket.on('browser-url-change', async (data) => {
+  if (!currentRoom) return;
+  
+  try {
+    await Room.findOneAndUpdate(
+      { roomId: currentRoom },
+      {
+        $set: {
+          browserUrl: data.url,
+          lastActivity: new Date()
+        }
+      }
+    );
+    
+    console.log('🌐 Browser URL changed:', data.url);
+    socket.to(currentRoom).emit('browser-url-change', data);
+  } catch (error) {
+    console.error('❌ Error updating browser URL:', error);
+  }
+});
 
   // ========== FILE OPERATIONS ==========
   
